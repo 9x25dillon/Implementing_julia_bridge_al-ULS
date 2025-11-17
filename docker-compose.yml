@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Mock AL-ULS server (FastAPI)
+  mock-al-uls:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONPATH=/app
+    command: uvicorn mock_al_uls_server:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Julia bridge (LIMPSBridge)
+  julia-bridge:
+    build:
+      context: ./vectorizer
+      dockerfile: Dockerfile.julia
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./vectorizer:/app
+    environment:
+      - AL_ULS_URL=http://mock-al-uls:8000
+    depends_on:
+      mock-al-uls:
+        condition: service_healthy
+    command: julia --project -e 'include("LIMPSBridge.jl"); using .LIMPSBridge; LIMPSBridge.serve(host="0.0.0.0", port=8099)'
+
+  # CCL tools (Python utilities)
+  ccl-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    volumes:
+      - .:/app
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - julia-bridge
+    profiles:
+      - tools
+
+  # WaveCaster service
+  wavecaster:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    volumes:
+      - .:/app
+      - ./output:/app/output
+    environment:
+      - PYTHONPATH=/app
+    command: python wavecaster.py --help
+    profiles:
+      - tools
