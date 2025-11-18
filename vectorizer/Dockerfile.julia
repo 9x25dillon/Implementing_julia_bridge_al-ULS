@@ -1,0 +1,17 @@
+FROM julia:1.9
+
+WORKDIR /app
+
+# Copy Julia project files
+COPY Project.toml .
+
+# Instantiate Julia dependencies
+RUN julia --project -e 'using Pkg; Pkg.instantiate()'
+
+# Copy Julia source code
+COPY . .
+
+# Expose port for Julia bridge
+EXPOSE 8099
+
+CMD ["julia", "--project", "-e", "include(\"LIMPSBridge.jl\"); using .LIMPSBridge; LIMPSBridge.serve(host=\"0.0.0.0\", port=8099)"]
